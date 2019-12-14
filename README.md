@@ -1,5 +1,5 @@
 # ESPboy_PT3Play
-ESPboy PT3 music player with AY-3-8910 sound chip emulator
+ESPboy PT3 - AY-3-8910 music player
 
 v1.0 13.12.2019 initial version by Shiru
 
