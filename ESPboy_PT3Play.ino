@@ -1,3 +1,4 @@
+//v1.2 14.12.2019 linear interp for better quality, analyzer display fix, backlight off during startup
 //v1.1 14.12.2019 hardware init fix, stereo and i2s support
 //v1.0 13.12.2019 initial version
 //by Shiru
@@ -18,6 +19,7 @@ enum {
 
 
 #include <Adafruit_MCP23017.h>
+#include <Adafruit_MCP4725.h>
 #include <Adafruit_ST7735.h>
 #include <Adafruit_GFX.h>
 #include <ESP8266WiFi.h>
@@ -43,6 +45,9 @@ enum {
 
 Adafruit_MCP23017 mcp;
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
+
+#define MCP4725address 0x60
+Adafruit_MCP4725 dac;
 
 #define AY_CLOCK      1773400         //pitch
 #define SAMPLE_RATE   44010           //quality of the sound, i2s DAC can't handle more than 44100 by some reason (not even 48000)
@@ -152,7 +157,7 @@ int interruptCnt;
 void spec_add(int hz, int level, uint16_t color)
 {
   int i, off;
-  const int curve[5] = {SPEC_HEIGHT / 8, SPEC_HEIGHT / 5, SPEC_HEIGHT / 2, SPEC_HEIGHT / 5, SPEC_HEIGHT / 8};
+  const int curve[5] = {SPEC_HEIGHT / 10, SPEC_HEIGHT / 5, SPEC_HEIGHT / 2, SPEC_HEIGHT / 5, SPEC_HEIGHT / 10};
 
   if (hz)
   {
@@ -193,23 +198,23 @@ void spec_add_ay(AYChipStruct* chip)
 
   if (!(chip->reg[7] & 0x01) && !(chip->reg[8] & 0x10))
   {
-    period = (chip->reg[0] + chip->reg[1] * 256);
+    period = chip->reg[0] + chip->reg[1] * 256;
     if (period) spec_add(AY_CLOCK / 16 / period, chip->reg[8], SPEC_CHA_COL);
   }
   if (!(chip->reg[7] & 0x02) && !(chip->reg[9] & 0x10))
   {
-    period = (chip->reg[2] + chip->reg[3] * 256);
+    period = chip->reg[2] + chip->reg[3] * 256;
     if (period) spec_add(AY_CLOCK / 16 / period, chip->reg[9], SPEC_CHB_COL);
   }
   if (!(chip->reg[7] & 0x04) && !(chip->reg[10] & 0x10))
   {
-    period = (chip->reg[4] + chip->reg[5] * 256);
+    period = chip->reg[4] + chip->reg[5] * 256;
     if (period) spec_add(AY_CLOCK / 16 / period, chip->reg[10], SPEC_CHC_COL);
   }
   if ((chip->reg[8] & 0x10) || (chip->reg[9] & 0x10) || (chip->reg[10] & 0x10))
   {
-    period = (chip->reg[13] + chip->reg[14] * 256);
-    if (period) spec_add(AY_CLOCK / 16 / 16 / period, 16, SPEC_ENV_COL);
+    period = chip->reg[11] + chip->reg[12] * 256;
+    if (period) spec_add(AY_CLOCK / 16 / 16 / period, 12, SPEC_ENV_COL);
   }
 }
 
@@ -217,7 +222,7 @@ void spec_add_ay(AYChipStruct* chip)
 
 uint32_t emulate_sample(void)
 {
-  uint32_t chn_a, chn_b, chn_c, out_l, out_r;
+  uint32_t out_l, out_r;
 
   if (interruptCnt++ >= (SAMPLE_RATE / FRAME_RATE))
   {
@@ -234,23 +239,15 @@ uint32_t emulate_sample(void)
 
   ay_tick(&AYInfo.chip0, (AY_CLOCK / SAMPLE_RATE / 8));
 
-  chn_a = volTab[AYInfo.chip0.dac[0]];
-  chn_b = volTab[AYInfo.chip0.dac[1]];
-  chn_c = volTab[AYInfo.chip0.dac[2]];
-
-  out_l = chn_a + chn_b / 2;
-  out_r = chn_c + chn_b / 2;
+  out_l = AYInfo.chip0.out[0] + AYInfo.chip0.out[1] / 2;
+  out_r = AYInfo.chip0.out[2] + AYInfo.chip0.out[1] / 2;
 
   if (AYInfo.is_ts)
   {
     ay_tick(&AYInfo.chip1, (AY_CLOCK / SAMPLE_RATE / 8));
 
-    chn_a = volTab[AYInfo.chip1.dac[0]];
-    chn_b = volTab[AYInfo.chip1.dac[1]];
-    chn_c = volTab[AYInfo.chip1.dac[2]];
-
-    out_l += chn_a + chn_b / 2;
-    out_r += chn_c + chn_b / 2;
+    out_l += AYInfo.chip0.out[0] + AYInfo.chip0.out[1] / 2;
+    out_r += AYInfo.chip0.out[2] + AYInfo.chip0.out[1] / 2;
   }
 
   if (out_l > 32767) out_l = 32767;
@@ -518,7 +515,7 @@ void music_stop()
 
 void playing_screen(const char* filename)
 {
-  int i, h, sx, sy, off;
+  int i, h, sx, sy, off, frame;
   char str[21];
 
   for (i = 0; i < SPEC_BANDS; ++i)
@@ -550,6 +547,8 @@ void playing_screen(const char* filename)
   }
 
   music_play();
+
+  frame = 0;
 
   while (music_data)
   {
@@ -757,6 +756,12 @@ void setup()
   WiFi.mode(WIFI_OFF);
   WiFi.forceSleepBegin();
 
+  //DAC init, LCD backlit off
+
+  dac.begin(MCP4725address);
+  delay(100);
+  dac.setVoltage(0, false);
+
   //mcp23017 and buttons init, should preceed the TFT init
 
   mcp.begin(MCP23017address);
@@ -780,6 +785,8 @@ void setup()
   delay(100);
   tft.setRotation(0);
   tft.fillScreen(ST77XX_BLACK);
+
+  dac.setVoltage(4095, true);
 
   //filesystem init
 
