@@ -1,17 +1,33 @@
+//v1.1 14.12.2019 hardware init fix, stereo and i2s support
 //v1.0 13.12.2019 initial version
 //by Shiru
 //shiru@mail.ru
 //https://www.patreon.com/shiru8bit
+
+//configure output device
+//if the i2s DAC is selected, but not connected, ESPboy crashes
+
+enum {
+  OUT_SPEAKER = 0,
+  OUT_I2S
+};
+
+#define OUTPUT_DEVICE   OUT_SPEAKER
+//#define OUTPUT_DEVICE   OUT_I2S
+
+
 
 #include <Adafruit_MCP23017.h>
 #include <Adafruit_ST7735.h>
 #include <Adafruit_GFX.h>
 #include <ESP8266WiFi.h>
 #include <sigma_delta.h>
+#include <i2s.h>
+#include <i2s_reg.h>
 
 #include "glcdfont.c"
 
-#include "gfx/espboy.h"
+#include "gfx\espboy.h"
 
 #define MCP23017address 0 // actually it's 0x20 but in <Adafruit_MCP23017.h> lib there is (x|0x20) :)
 
@@ -29,11 +45,11 @@ Adafruit_MCP23017 mcp;
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
 #define AY_CLOCK      1773400         //pitch
-#define SAMPLE_RATE   (AY_CLOCK/32)   //quality of the sound
+#define SAMPLE_RATE   44010           //quality of the sound, i2s DAC can't handle more than 44100 by some reason (not even 48000)
 #define FRAME_RATE    50              //speed
 
 
-volatile uint32_t sound_dac;
+volatile uint32_t sound_stereo_dac;
 
 int pad_state;
 int pad_state_prev;
@@ -55,7 +71,7 @@ int pad_state_t;
 #define SPEC_SX           0
 #define SPEC_SY           64
 #define SPEC_BAND_WIDTH   3
-#define SPEC_DECAY        2
+#define SPEC_DECAY        3
 
 #define SPEC_CHA_COL      0x041F
 #define SPEC_CHB_COL      0xFC18
@@ -68,6 +84,9 @@ volatile uint16_t spec_colors[SPEC_BANDS];
 
 uint8_t music_data[32768];
 int music_data_size;
+
+int output_device;
+
 
 
 #include "ay_emu.h"
@@ -196,9 +215,9 @@ void spec_add_ay(AYChipStruct* chip)
 
 
 
-signed short emulate_sample(void)
+uint32_t emulate_sample(void)
 {
-  int chn_a, chn_b, chn_c, out;
+  uint32_t chn_a, chn_b, chn_c, out_l, out_r;
 
   if (interruptCnt++ >= (SAMPLE_RATE / FRAME_RATE))
   {
@@ -219,7 +238,8 @@ signed short emulate_sample(void)
   chn_b = volTab[AYInfo.chip0.dac[1]];
   chn_c = volTab[AYInfo.chip0.dac[2]];
 
-  out = (chn_a + chn_b + chn_c) / 256;
+  out_l = chn_a + chn_b / 2;
+  out_r = chn_c + chn_b / 2;
 
   if (AYInfo.is_ts)
   {
@@ -229,21 +249,34 @@ signed short emulate_sample(void)
     chn_b = volTab[AYInfo.chip1.dac[1]];
     chn_c = volTab[AYInfo.chip1.dac[2]];
 
-    out = (chn_a + chn_b + chn_c) / 256;
+    out_l += chn_a + chn_b / 2;
+    out_r += chn_c + chn_b / 2;
   }
 
-  if (out > 255) out = 255;
+  if (out_l > 32767) out_l = 32767;
+  if (out_r > 32767) out_r = 32767;
 
-  return out;
+  return out_l | (out_r << 16);
 }
 
 
 
-void ICACHE_RAM_ATTR sound_ISR()
+void ICACHE_RAM_ATTR sound_speaker_ISR()
 {
-  sigmaDeltaWrite(0, sound_dac);
+  sigmaDeltaWrite(0, sound_stereo_dac);
 
-  sound_dac = emulate_sample();
+  uint32_t out = emulate_sample();
+
+  sound_stereo_dac = ((out & 0xff00) >> 8) + ((out & 0xff000000) >> 24); //convert to 8-bit mono
+}
+
+
+
+void ICACHE_RAM_ATTR sound_i2s_ISR()
+{
+  i2s_write_sample_nb(sound_stereo_dac);
+
+  sound_stereo_dac = emulate_sample();
 }
 
 
@@ -416,52 +449,6 @@ bool espboy_logo_effect(int out)
 
 
 
-void setup()
-{
-  //serial init
-
-  Serial.begin(115200);
-
-  //disable wifi to safe some battery power
-
-  WiFi.mode(WIFI_OFF);
-  WiFi.forceSleepBegin();
-
-
-
-  //buttons on mcp23017 init
-
-  mcp.begin(MCP23017address);
-  delay(100);
-
-  for (int i = 0; i < 8; i++)
-  {
-    mcp.pinMode(i, INPUT);
-    mcp.pullUp(i, HIGH);
-  }
-
-
-  //TFT init
-
-  mcp.pinMode(csTFTMCP23017pin, OUTPUT);
-  mcp.digitalWrite(csTFTMCP23017pin, LOW);
-  tft.initR(INITR_144GREENTAB);
-  delay(100);
-  tft.setRotation(0);
-  tft.fillScreen(ST77XX_BLACK);
-
-  pad_state = 0;
-  pad_state_prev = 0;
-  pad_state_t = 0;
-
-  //filesystem init
-
-  SPIFFS.begin();
-
-  delay(300);
-}
-
-
 void music_open(const char* filename)
 {
   fs::File f = SPIFFS.open(filename, "r");
@@ -485,24 +472,44 @@ void music_play()
 
   PT3_Init(AYInfo);
 
-  sound_dac = 0;
+  sound_stereo_dac = 0;
   interruptCnt = 0;
 
-  noInterrupts();
-  sigmaDeltaSetup(0, F_CPU / 256);
-  sigmaDeltaAttachPin(SOUNDPIN);
-  sigmaDeltaEnable();
-  timer1_attachInterrupt(sound_ISR);
-  timer1_enable(TIM_DIV1, TIM_EDGE, TIM_LOOP);
-  timer1_write(ESP.getCpuFreqMHz() * 1000000 / SAMPLE_RATE);
-  interrupts();
+  switch (output_device)
+  {
+    case OUT_SPEAKER:
+
+      noInterrupts();
+      sigmaDeltaSetup(0, F_CPU / 256);
+      sigmaDeltaAttachPin(SOUNDPIN);
+      sigmaDeltaEnable();
+      timer1_attachInterrupt(sound_speaker_ISR);
+      timer1_enable(TIM_DIV1, TIM_EDGE, TIM_LOOP);
+      timer1_write(ESP.getCpuFreqMHz() * 1000000 / SAMPLE_RATE);
+      interrupts();
+      break;
+
+    case OUT_I2S:
+      i2s_begin();
+      i2s_set_rate(SAMPLE_RATE);
+      timer1_attachInterrupt(sound_i2s_ISR);
+      timer1_enable(TIM_DIV1, TIM_EDGE, TIM_LOOP);
+      timer1_write(ESP.getCpuFreqMHz() * 1000000 / SAMPLE_RATE);
+      break;
+  }
 }
 
 void music_stop()
 {
   noInterrupts();
-  sigmaDeltaDisable();
   timer1_disable();
+
+  switch (output_device)
+  {
+    case OUT_SPEAKER: sigmaDeltaDisable(); break;
+    case OUT_I2S: i2s_end(); break;
+  }
+
   interrupts();
   delay(10);
 }
@@ -570,7 +577,7 @@ void playing_screen(const char* filename)
 
     if (pad_state_t) break;
 
-    delay(1000 / 200);
+    delay(1);
   }
 
   music_stop();
@@ -708,22 +715,23 @@ void file_browser(String path, const char* header, char* filename, int filename_
 
     if (pad_state_t & PAD_UP)
     {
-      if (file_cursor > 0)
-      {
-        --file_cursor;
-        change = true;
-        frame = 32;
-      }
+      --file_cursor;
+
+      if (file_cursor < 0) file_cursor = file_count - 1;
+
+      change = true;
+      frame = 32;
+
     }
 
     if (pad_state_t & PAD_DOWN)
     {
-      if (file_cursor < (file_count - 1))
-      {
-        ++file_cursor;
-        change = true;
-        frame = 32;
-      }
+      ++file_cursor;
+
+      if (file_cursor >= file_count) file_cursor = 0;
+
+      change = true;
+      frame = 32;
     }
 
     if (pad_state_t & (PAD_A | PAD_B)) break;
@@ -734,6 +742,52 @@ void file_browser(String path, const char* header, char* filename, int filename_
 
     if (!(frame & 31)) change = true;
   }
+}
+
+
+
+void setup()
+{
+  //serial init
+
+  Serial.begin(115200);
+
+  //disable wifi to save some battery power
+
+  WiFi.mode(WIFI_OFF);
+  WiFi.forceSleepBegin();
+
+  //mcp23017 and buttons init, should preceed the TFT init
+
+  mcp.begin(MCP23017address);
+  delay(100);
+
+  for (int i = 0; i < 8; i++)
+  {
+    mcp.pinMode(i, INPUT);
+    mcp.pullUp(i, HIGH);
+  }
+
+  pad_state = 0;
+  pad_state_prev = 0;
+  pad_state_t = 0;
+
+  //TFT init
+
+  mcp.pinMode(csTFTMCP23017pin, OUTPUT);
+  mcp.digitalWrite(csTFTMCP23017pin, LOW);
+  tft.initR(INITR_144GREENTAB);
+  delay(100);
+  tft.setRotation(0);
+  tft.fillScreen(ST77XX_BLACK);
+
+  //filesystem init
+
+  SPIFFS.begin();
+
+  delay(300);
+
+  output_device = OUTPUT_DEVICE;
 }
 
 
