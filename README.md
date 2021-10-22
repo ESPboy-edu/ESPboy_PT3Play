@@ -1,4 +1,4 @@
-##ESPboy_PT3Play
+# ESPboy_PT3Play
 
 ESPboy PT3 - AY-3-8910 music player, using standard speaker or additional ESPboy MCP5102 I2S DAC module for better sound quality
 
