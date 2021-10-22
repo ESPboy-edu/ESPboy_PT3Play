@@ -1,12 +1,10 @@
-#ESPboy_PT3Play
+#ESPboy_PT3Play (using standard speaker or additional ESPboy MCP5102 I2S DAC module for better sound quality)
 ESPboy PT3 - AY-3-8910 music player
 
-v1.0 13.12.2019 initial version by Shiru
-
-can play low quality sound using standard speaker 
-or high quality sound using extension PCM5102 DAC I2S module
-
 [demo video](https://www.youtube.com/watch?v=zYsDjjNx5j0)
+
+
+initial version by Shiru
 
 <shiru@mail.ru>
 
@@ -20,7 +18,7 @@ Programming lesson learned: do not use sigma-delta while accessing SPIFFS, it cr
 
 I have included some of my own music to test it out. See zxtunes.com or the TrSongs archive to get much more.
 
-You can buy DAC this module ready-made or make it yourself.
+You can buy this DAC module ready-made or make it yourself.
 
 
 ![1](pics/1_PCM5102.jpg)
