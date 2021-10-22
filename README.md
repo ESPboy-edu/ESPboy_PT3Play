@@ -41,7 +41,7 @@ You can buy this DAC module ready-made or make it yourself.
 
 ## 2. Connect PCM5102 DAC module -> ESPboy I2S bus
 
-- Vin -> VCC
+- VIN -> VCC
 - GND -> GND
 - LCK -> G2 (GPIO2 / D4 / I2S0-WS)
 - DIN -> RX (I2S0-DATA)
