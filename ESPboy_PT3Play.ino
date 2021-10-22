@@ -1,3 +1,4 @@
+//v1.3 22.10.2019 switching gfx to TFT_eSPI lib
 //v1.2 14.12.2019 linear interp for better quality, analyzer display fix, backlight off during startup
 //v1.1 14.12.2019 hardware init fix, stereo and i2s support
 //v1.0 13.12.2019 initial version
@@ -7,29 +8,30 @@
 
 //configure output device
 //if the i2s DAC is selected, but not connected, ESPboy crashes
+//compile for 80mHz freq!!!
+
+
+//#define OUTPUT_DEVICE   OUT_SPEAKER
+#define OUTPUT_DEVICE   OUT_I2S
+
+
 
 enum {
   OUT_SPEAKER = 0,
   OUT_I2S
 };
 
-#define OUTPUT_DEVICE   OUT_SPEAKER
-//#define OUTPUT_DEVICE   OUT_I2S
 
-
-
+#include <TFT_eSPI.h>  
 #include <Adafruit_MCP23017.h>
 #include <Adafruit_MCP4725.h>
-#include <Adafruit_ST7735.h>
-#include <Adafruit_GFX.h>
 #include <ESP8266WiFi.h>
 #include <sigma_delta.h>
 #include <i2s.h>
 #include <i2s_reg.h>
 
 #include "glcdfont.c"
-
-#include "gfx\espboy.h"
+#include "gfx/espboy.h"
 
 #define MCP23017address 0 // actually it's 0x20 but in <Adafruit_MCP23017.h> lib there is (x|0x20) :)
 
@@ -37,14 +39,10 @@ enum {
 #define LEDPIN         D4
 #define SOUNDPIN       D3
 
-//SPI for LCD
 #define csTFTMCP23017pin 8
-#define TFT_RST       -1
-#define TFT_DC        D8
-#define TFT_CS        -1
 
+TFT_eSPI tft;
 Adafruit_MCP23017 mcp;
-Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
 #define MCP4725address 0x60
 Adafruit_MCP4725 dac;
@@ -346,7 +344,7 @@ void drawBMP8Part(int16_t x, int16_t y, const uint8_t bitmap[], int16_t dx, int1
         buf[j] = ((rgb & 0xf8) >> 3) | ((rgb & 0xfc00) >> 5) | ((rgb & 0xf80000) >> 8);
       }
 
-      tft.drawRGBBitmap(x, y + i, buf, w, 1);
+      tft.pushImage(x, y + i, w, 1, buf);
     }
   }
   else
@@ -363,7 +361,7 @@ void drawBMP8Part(int16_t x, int16_t y, const uint8_t bitmap[], int16_t dx, int1
         off -= wa;
       }
 
-      tft.drawRGBBitmap(x + i, y, buf, 1, h);
+      tft.pushImage(x + i, y, 1, h, buf);
     }
   }
 }
@@ -385,8 +383,7 @@ void drawCharFast(int x, int y, int c, int16_t color, int16_t bg)
       line >>= 1;
     }
   }
-
-  tft.drawRGBBitmap(x, y, buf, 5, 8);
+  tft.pushImage(x, y, 5, 8, buf);
 }
 
 
@@ -522,27 +519,27 @@ void playing_screen(const char* filename)
   {
     spec_levels[i] = 0;
     spec_levels_prev[i] = -1;
-    spec_colors[i] = ST77XX_BLACK;
+    spec_colors[i] = TFT_BLACK;
   }
 
   music_open(filename);
 
-  tft.fillScreen(ST77XX_BLACK);
+  tft.fillScreen(TFT_BLACK);
 
-  printFast(4, 16, "Now playing...", ST77XX_YELLOW);
-  tft.fillRect(0, 24, 128, 1, ST77XX_WHITE);
+  printFast(4, 16, "Now playing...", TFT_YELLOW);
+  tft.fillRect(0, 24, 128, 1, TFT_WHITE);
 
   memset(str, 0, sizeof(str));
   memcpy(str, &music_data[0x1e], 20);
-  printFast(4, 26, str, ST77XX_WHITE);
+  printFast(4, 26, str, TFT_WHITE);
   memcpy(str, &music_data[0x3f], 20);
-  printFast(4, 34, str, ST77XX_WHITE);
+  printFast(4, 34, str, TFT_WHITE);
 
   sx = SPEC_SX;
 
   for (i = 0; i < SPEC_BANDS; ++i)
   {
-    tft.fillRect(sx, SPEC_SY + SPEC_HEIGHT + 1, SPEC_BAND_WIDTH - 1, 1, ST77XX_WHITE);
+    tft.fillRect(sx, SPEC_SY + SPEC_HEIGHT + 1, SPEC_BAND_WIDTH - 1, 1, TFT_WHITE);
     sx += SPEC_BAND_WIDTH;
   }
 
@@ -565,7 +562,7 @@ void playing_screen(const char* filename)
 
         if (h > SPEC_HEIGHT) h = SPEC_HEIGHT;
 
-        tft.fillRect(sx, sy, 5, SPEC_HEIGHT - h, ST77XX_BLACK);
+        tft.fillRect(sx, sy, 5, SPEC_HEIGHT - h, TFT_BLACK);
         tft.fillRect(sx, sy + SPEC_HEIGHT - h, SPEC_BAND_WIDTH - 1, h, spec_colors[i]);
       }
 
@@ -609,7 +606,7 @@ void file_browser(String path, const char* header, char* filename, int filename_
   memset(filename, 0, filename_len);
   memset(name, 0, sizeof(name));
 
-  tft.fillScreen(ST77XX_BLACK);
+  tft.fillScreen(TFT_BLACK);
 
   dir = SPIFFS.openDir(path);
 
@@ -628,13 +625,13 @@ void file_browser(String path, const char* header, char* filename, int filename_
 
   if (!file_count)
   {
-    printFast(24, 60, "No files found", ST77XX_RED);
+    printFast(24, 60, "No files found", TFT_RED);
 
     while (1) delay(1000);
   }
 
-  printFast(4, 4, (char*)header, ST77XX_GREEN);
-  tft.fillRect(0, 12, 128, 1, ST77XX_WHITE);
+  printFast(4, 4, (char*)header, TFT_GREEN);
+  tft.fillRect(0, 12, 128, 1, TFT_WHITE);
 
   change = true;
   frame = 0;
@@ -682,15 +679,15 @@ void file_browser(String path, const char* header, char* filename, int filename_
             if (*str != 0 && *str != '.') name[j] = *str++; else name[j] = ' ';
           }
 
-          printFast(8, sy, name, ST77XX_WHITE);
+          printFast(8, sy, name, TFT_WHITE);
 
-          drawCharFast(2, sy, ' ', ST77XX_WHITE, ST77XX_BLACK);
+          drawCharFast(2, sy, ' ', TFT_WHITE, TFT_BLACK);
 
           if (pos == file_cursor)
           {
             strncpy(filename, entry.name(), filename_len);
 
-            if (frame & 32) drawCharFast(2, sy, 0xdb, ST77XX_WHITE, ST77XX_BLACK);
+            if (frame & 32) drawCharFast(2, sy, 0xdb, TFT_WHITE, TFT_BLACK);
           }
         }
 
@@ -781,18 +778,17 @@ void setup()
 
   mcp.pinMode(csTFTMCP23017pin, OUTPUT);
   mcp.digitalWrite(csTFTMCP23017pin, LOW);
-  tft.initR(INITR_144GREENTAB);
-  delay(100);
-  tft.setRotation(0);
-  tft.fillScreen(ST77XX_BLACK);
 
+  tft.begin();
+  tft.setSwapBytes(true);
+  tft.setRotation(0);
+  tft.fillScreen(TFT_BLACK);
+  delay(200);
   dac.setVoltage(4095, true);
 
   //filesystem init
-
   SPIFFS.begin();
-
-  delay(300);
+  delay(100);
 
   output_device = OUTPUT_DEVICE;
 }
