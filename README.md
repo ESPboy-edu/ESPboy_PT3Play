@@ -51,12 +51,12 @@ You can buy this DAC module ready-made or make it yourself.
 
 ## 3. Upload this firmware
 
-NOTE: Before compilation, set Arduino IDE settings
+NOTE1: Before compilation, set Arduino IDE settings
 
 -  Board:  ESP8266 WeMos D1 mini
 -  !CPU frequency: 80Mhz
 
-NOTE: After compilation [upload music files to SPIFFS](https://randomnerdtutorials.com/install-esp8266-filesystem-uploader-arduino-ide/)
+NOTE2: After compilation [upload music files to SPIFFS](https://randomnerdtutorials.com/install-esp8266-filesystem-uploader-arduino-ide/)
 
 
 ## 4. Useful links
