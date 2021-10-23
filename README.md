@@ -1,12 +1,11 @@
-#ESPboy_PT3Play
-ESPboy PT3 - AY-3-8910 music player
+# ESPboy_PT3Play
 
-v1.0 13.12.2019 initial version by Shiru
-
-can play low quality sound using standard speaker 
-or high quality sound using extension PCM5102 DAC I2S module
+ESPboy PT3 - AY-3-8910 music player, using standard speaker or additional ESPboy MCP5102 I2S DAC module for better sound quality
 
 [demo video](https://www.youtube.com/watch?v=zYsDjjNx5j0)
+
+
+initial version by Shiru
 
 <shiru@mail.ru>
 
@@ -20,7 +19,7 @@ Programming lesson learned: do not use sigma-delta while accessing SPIFFS, it cr
 
 I have included some of my own music to test it out. See zxtunes.com or the TrSongs archive to get much more.
 
-You can buy DAC this module ready-made or make it yourself.
+You can buy this DAC module ready-made or make it yourself.
 
 
 ![1](pics/1_PCM5102.jpg)
@@ -42,7 +41,7 @@ You can buy DAC this module ready-made or make it yourself.
 
 ## 2. Connect PCM5102 DAC module -> ESPboy I2S bus
 
-- Vin -> VCC
+- VIN -> VCC
 - GND -> GND
 - LCK -> G2 (GPIO2 / D4 / I2S0-WS)
 - DIN -> RX (I2S0-DATA)
@@ -52,12 +51,12 @@ You can buy DAC this module ready-made or make it yourself.
 
 ## 3. Upload this firmware
 
-NOTE: Before compilation, set Arduino IDE settings
+NOTE1: Before compilation, set Arduino IDE settings
 
 -  Board:  ESP8266 WeMos D1 mini
 -  !CPU frequency: 80Mhz
 
-NOTE: After compilation [upload music files to SPIFFS](https://randomnerdtutorials.com/install-esp8266-filesystem-uploader-arduino-ide/)
+NOTE2: After compilation [upload music files to SPIFFS](https://randomnerdtutorials.com/install-esp8266-filesystem-uploader-arduino-ide/)
 
 
 ## 4. Useful links
