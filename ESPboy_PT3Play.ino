@@ -1,4 +1,4 @@
-//v1.3 22.10.2019 switching gfx to TFT_eSPI lib
+//v1.3 22.10.2019 gfx to TFT_eSPI lib, fixed 80/160Mhz bug
 //v1.2 14.12.2019 linear interp for better quality, analyzer display fix, backlight off during startup
 //v1.1 14.12.2019 hardware init fix, stereo and i2s support
 //v1.0 13.12.2019 initial version
@@ -8,7 +8,6 @@
 
 //configure output device
 //if the i2s DAC is selected, but not connected, ESPboy crashes
-//compile for 80mHz freq!!!
 
 
 //#define OUTPUT_DEVICE   OUT_SPEAKER
@@ -479,7 +478,7 @@ void music_play()
       sigmaDeltaEnable();
       timer1_attachInterrupt(sound_speaker_ISR);
       timer1_enable(TIM_DIV1, TIM_EDGE, TIM_LOOP);
-      timer1_write(ESP.getCpuFreqMHz() * 1000000 / SAMPLE_RATE);
+      timer1_write(80 * 1000000 / SAMPLE_RATE);
       interrupts();
       break;
 
@@ -488,7 +487,7 @@ void music_play()
       i2s_set_rate(SAMPLE_RATE);
       timer1_attachInterrupt(sound_i2s_ISR);
       timer1_enable(TIM_DIV1, TIM_EDGE, TIM_LOOP);
-      timer1_write(ESP.getCpuFreqMHz() * 1000000 / SAMPLE_RATE);
+      timer1_write(80 * 1000000 / SAMPLE_RATE);
       break;
   }
 }
