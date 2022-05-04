@@ -473,7 +473,7 @@ void music_play()
     case OUT_SPEAKER:
 
       noInterrupts();
-      sigmaDeltaSetup(0, F_CPU / 256);
+      sigmaDeltaSetup(0, SAMPLE_RATE);
       sigmaDeltaAttachPin(SOUNDPIN);
       sigmaDeltaEnable();
       timer1_attachInterrupt(sound_speaker_ISR);
